@@ -16,8 +16,8 @@ A full-stack AI chatbot application built with **Express.js**, **Angular**, and 
 ## Prerequisites
 
 - **Node.js** 18+
+- **PostgreSQL** reachable from your machine (local install, [Docker](https://hub.docker.com/_/postgres), or a free tier from [Neon](https://neon.tech) / [Supabase](https://supabase.com))
 - An API key for at least one AI provider (OpenAI, Anthropic, or Gemini)
-- No database setup needed locally (uses SQLite by default)
 
 ## Local Development Setup
 
@@ -45,12 +45,12 @@ cp .env.example .env
 Edit `server/.env`:
 
 ```env
-DATABASE_URL="file:./dev.db"
+DATABASE_URL="postgresql://USER:PASSWORD@localhost:5432/code_ai?schema=public"
 JWT_SECRET="your-secret-key"
 PORT=3000
 
-AI_PROVIDER=openai
-OPENAI_API_KEY=sk-...
+AI_PROVIDER=gemini
+GEMINI_API_KEY=...
 ```
 
 ### 3. Set up the database
@@ -58,10 +58,10 @@ OPENAI_API_KEY=sk-...
 ```bash
 cd server
 npx prisma generate
-npx prisma migrate dev --name init
+npx prisma migrate deploy
 ```
 
-> **Note:** Local dev uses **SQLite** (zero setup). For production on Render, the build process automatically switches to **PostgreSQL**.
+For a new empty database, `migrate deploy` applies the same migrations as production. To create additional migrations after schema changes, use `npx prisma migrate dev --name your_change` against a dev database.
 
 ### 4. Start the development servers
 
@@ -98,7 +98,7 @@ The app will be available at **http://localhost:4200**.
 
 1. Create a PostgreSQL database on Render
 2. Create a Web Service with:
-   - **Build Command**: `cd client && npm install --include=dev && npm run build && cd ../server && npm install --include=dev && cp prisma/schema.production.prisma prisma/schema.prisma && npx prisma generate && npx prisma migrate deploy && npm run build`  
+   - **Build Command**: `cd client && npm install --include=dev && npm run build && cd ../server && npm install --include=dev && npx prisma generate && npx prisma migrate deploy && npm run build`  
      (`--include=dev` is required on Render because `NODE_ENV=production` skips devDependencies, so Angular CLI and TypeScript are not installed otherwise.)
    - **Start Command**: `cd server && node dist/index.js`
 3. Set environment variables: `DATABASE_URL`, `JWT_SECRET`, `AI_PROVIDER`, `OPENAI_API_KEY`
