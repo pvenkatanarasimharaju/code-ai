@@ -7,136 +7,108 @@ export interface AIProvider {
   streamChat(messages: ChatMessage[]): AsyncIterable<string>;
 }
 
-let providerInstance: AIProvider | null = null;
-let cachedForProviderKey: string | null = null;
-
-/** Clears cached provider (e.g. after env reload in tests). */
-export function resetAIProviderCache(): void {
-  providerInstance = null;
-  cachedForProviderKey = null;
+export interface ProviderModelInfo {
+  id: string;
+  name: string;
 }
+
+export interface ProviderInfo {
+  id: string;
+  name: string;
+  models: ProviderModelInfo[];
+  defaultModel: string;
+}
+
+const PROVIDER_CATALOG: Record<
+  string,
+  {
+    name: string;
+    envKey: string;
+    envModelKey: string;
+    defaultModel: string;
+    models: ProviderModelInfo[];
+  }
+> = {
+  gemini: {
+    name: 'Google Gemini',
+    envKey: 'GEMINI_API_KEY',
+    envModelKey: 'GEMINI_MODEL',
+    // Stable ids per https://ai.google.dev/gemini-api/docs/models — gemini-1.5-* returns 404 on v1beta for many keys.
+    defaultModel: 'gemini-2.5-flash',
+    models: [
+      { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash' },
+      { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash-Lite' },
+      { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro' },
+      { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash (preview)' },
+    ],
+  },
+  openai: {
+    name: 'OpenAI',
+    envKey: 'OPENAI_API_KEY',
+    envModelKey: 'OPENAI_MODEL',
+    defaultModel: 'gpt-4o-mini',
+    models: [
+      { id: 'gpt-4o-mini', name: 'GPT-4o Mini' },
+      { id: 'gpt-4o', name: 'GPT-4o' },
+      { id: 'gpt-4-turbo', name: 'GPT-4 Turbo' },
+      { id: 'gpt-3.5-turbo', name: 'GPT-3.5 Turbo' },
+    ],
+  },
+  anthropic: {
+    name: 'Anthropic',
+    envKey: 'ANTHROPIC_API_KEY',
+    envModelKey: 'ANTHROPIC_MODEL',
+    defaultModel: 'claude-3-haiku-20240307',
+    models: [
+      { id: 'claude-3-haiku-20240307', name: 'Claude 3 Haiku' },
+      { id: 'claude-3-sonnet-20240229', name: 'Claude 3 Sonnet' },
+      { id: 'claude-3-opus-20240229', name: 'Claude 3 Opus' },
+    ],
+  },
+};
 
 /**
- * Resolves which backend to use. Supports gemini/google, anthropic/claude, openai/gpt.
- * If AI_PROVIDER is unset, picks the first provider that has an API key (Gemini first).
- * If AI_PROVIDER is openai but only GEMINI_API_KEY is set, falls back to Gemini.
+ * Returns providers whose API key is present in env.
+ * If a *_MODEL env var is set and not already in the built-in list, it is prepended.
  */
-export function getActiveProviderName(): string {
-  const raw = (process.env.AI_PROVIDER || '').trim().toLowerCase();
-  const hasOpenai = !!process.env.OPENAI_API_KEY?.trim();
-  const hasGemini = !!process.env.GEMINI_API_KEY?.trim();
-  const hasAnthropic = !!process.env.ANTHROPIC_API_KEY?.trim();
-
-  if (raw === 'anthropic' || raw === 'claude') return 'anthropic';
-  if (raw === 'gemini' || raw === 'google') return 'gemini';
-  if (raw === 'openai' || raw === 'gpt') {
-    if (!hasOpenai && hasGemini) {
-      console.warn('[ai] AI_PROVIDER is openai but OPENAI_API_KEY is empty; using Gemini instead.');
-      return 'gemini';
+export function getAvailableProviders(): ProviderInfo[] {
+  const result: ProviderInfo[] = [];
+  for (const [id, cat] of Object.entries(PROVIDER_CATALOG)) {
+    if (!process.env[cat.envKey]?.trim()) continue;
+    const envModel = process.env[cat.envModelKey]?.trim();
+    const defaultModel = envModel || cat.defaultModel;
+    const models = [...cat.models];
+    if (envModel && !models.some(m => m.id === envModel)) {
+      models.unshift({ id: envModel, name: envModel });
     }
-    return 'openai';
+    result.push({ id, name: cat.name, models, defaultModel });
   }
-
-  if (!raw) {
-    if (hasGemini) return 'gemini';
-    if (hasAnthropic) return 'anthropic';
-    if (hasOpenai) return 'openai';
-    return 'openai';
-  }
-
-  console.warn(`[ai] Unknown AI_PROVIDER="${process.env.AI_PROVIDER}", defaulting to openai`);
-  return 'openai';
+  return result;
 }
 
-function resolvedProviderKey(): string {
-  return `${getActiveProviderName()}|${process.env.OPENAI_API_KEY?.length || 0}|${process.env.GEMINI_API_KEY?.length || 0}|${process.env.ANTHROPIC_API_KEY?.length || 0}`;
-}
-
-export function isActiveProviderConfigured(): boolean {
-  const p = getActiveProviderName();
-  if (p === 'anthropic') return !!process.env.ANTHROPIC_API_KEY?.trim();
-  if (p === 'gemini') return !!process.env.GEMINI_API_KEY?.trim();
-  return !!process.env.OPENAI_API_KEY?.trim();
+export function getDefaultProvider(): string | null {
+  const providers = getAvailableProviders();
+  return providers.length > 0 ? providers[0].id : null;
 }
 
 export function logAiEnvStatus(): void {
-  const p = getActiveProviderName();
-  const ok = isActiveProviderConfigured();
-  console.log(`[ai] AI_PROVIDER(raw)=${JSON.stringify(process.env.AI_PROVIDER || '')}, resolved=${p}, apiKeyConfigured=${ok}`);
-  if (!ok) {
-    const keyName =
-      p === 'anthropic' ? 'ANTHROPIC_API_KEY' : p === 'gemini' ? 'GEMINI_API_KEY' : 'OPENAI_API_KEY';
-    console.warn(`[ai] Set ${keyName} in server/.env (see server/.env.example)`);
+  const providers = getAvailableProviders();
+  if (providers.length === 0) {
+    console.warn(
+      '[ai] No AI providers configured. Set at least one API key ' +
+        '(GEMINI_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY).',
+    );
+    return;
   }
+  const names = providers.map(p => `${p.id}(${p.defaultModel})`).join(', ');
+  console.log(`[ai] Available providers: ${names}`);
 }
 
-class OpenAIProvider implements AIProvider {
-  private client: any;
+// ---------------------------------------------------------------------------
+// Gemini helpers — chunk.text() throws on certain finishReasons / promptFeedback,
+// so we extract text manually from content.parts.
+// ---------------------------------------------------------------------------
 
-  constructor() {
-    const OpenAI = require('openai');
-    const apiKey = process.env.OPENAI_API_KEY?.trim();
-    if (!apiKey) {
-      throw new Error('OPENAI_API_KEY is missing. Add it to server/.env');
-    }
-    this.client = new OpenAI({ apiKey });
-  }
-
-  async *streamChat(messages: ChatMessage[]): AsyncIterable<string> {
-    const stream = await this.client.chat.completions.create({
-      model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
-      messages: messages.map(m => ({ role: m.role, content: m.content })),
-      stream: true,
-    });
-    for await (const chunk of stream) {
-      const content = chunk.choices?.[0]?.delta?.content;
-      if (content) yield content;
-    }
-  }
-}
-
-class AnthropicProvider implements AIProvider {
-  private client: any;
-
-  constructor() {
-    const Anthropic = require('@anthropic-ai/sdk');
-    const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
-    if (!apiKey) {
-      throw new Error('ANTHROPIC_API_KEY is missing. Add it to server/.env');
-    }
-    this.client = new Anthropic.default({ apiKey });
-  }
-
-  async *streamChat(messages: ChatMessage[]): AsyncIterable<string> {
-    const systemMsg = messages.find(m => m.role === 'system');
-    const nonSystemMsgs = messages.filter(m => m.role !== 'system');
-
-    const stream = await this.client.messages.stream({
-      model: process.env.ANTHROPIC_MODEL || 'claude-3-haiku-20240307',
-      max_tokens: 4096,
-      system: systemMsg?.content || 'You are a helpful AI assistant.',
-      messages: nonSystemMsgs.map(m => ({ role: m.role, content: m.content })),
-    });
-
-    for await (const event of stream) {
-      if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
-        yield event.delta.text;
-      }
-    }
-  }
-}
-
-/**
- * Gemini: systemInstruction on the model (not as a fake "user" in history).
- * Default model is a current Flash id; gemini-pro is deprecated on the Generative Language API.
- *
- * Stream chunks from @google/generative-ai must not use chunk.text(): it throws on
- * SAFETY / RECITATION / LANGUAGE finish reasons and on promptFeedback blocks, which
- * breaks streaming intermittently in production even with a valid API key.
- *
- * Gemini 2.5 may emit thought-only parts first; skip parts with thought: true.
- * Do not treat BLOCK_REASON_UNSPECIFIED as a block (some chunks carry it without blocking).
- */
 function extractGeminiStreamChunkText(chunk: unknown): string {
   const r = chunk as {
     candidates?: Array<{
@@ -190,23 +162,74 @@ function extractGeminiStreamChunkText(chunk: unknown): string {
   return out;
 }
 
-/** Final aggregated response from sendMessageStream — same safe extraction. */
 function extractGeminiFinalResponseText(response: unknown): string {
   return extractGeminiStreamChunkText(response);
 }
 
+// ---------------------------------------------------------------------------
+// Provider implementations
+// ---------------------------------------------------------------------------
+
+class OpenAIProvider implements AIProvider {
+  private client: any;
+
+  constructor(private model: string) {
+    const OpenAI = require('openai');
+    const apiKey = process.env.OPENAI_API_KEY?.trim();
+    if (!apiKey) throw new Error('OPENAI_API_KEY is missing. Add it to server/.env');
+    this.client = new OpenAI({ apiKey });
+  }
+
+  async *streamChat(messages: ChatMessage[]): AsyncIterable<string> {
+    const stream = await this.client.chat.completions.create({
+      model: this.model,
+      messages: messages.map(m => ({ role: m.role, content: m.content })),
+      stream: true,
+    });
+    for await (const chunk of stream) {
+      const content = chunk.choices?.[0]?.delta?.content;
+      if (content) yield content;
+    }
+  }
+}
+
+class AnthropicProvider implements AIProvider {
+  private client: any;
+
+  constructor(private model: string) {
+    const Anthropic = require('@anthropic-ai/sdk');
+    const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
+    if (!apiKey) throw new Error('ANTHROPIC_API_KEY is missing. Add it to server/.env');
+    this.client = new Anthropic.default({ apiKey });
+  }
+
+  async *streamChat(messages: ChatMessage[]): AsyncIterable<string> {
+    const systemMsg = messages.find(m => m.role === 'system');
+    const nonSystemMsgs = messages.filter(m => m.role !== 'system');
+
+    const stream = await this.client.messages.stream({
+      model: this.model,
+      max_tokens: 4096,
+      system: systemMsg?.content || 'You are a helpful AI assistant.',
+      messages: nonSystemMsgs.map(m => ({ role: m.role, content: m.content })),
+    });
+
+    for await (const event of stream) {
+      if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
+        yield event.delta.text;
+      }
+    }
+  }
+}
+
 class GeminiProvider implements AIProvider {
   private genAI: any;
-  private modelName: string;
 
-  constructor() {
+  constructor(private modelName: string) {
     const { GoogleGenerativeAI } = require('@google/generative-ai');
     const apiKey = process.env.GEMINI_API_KEY?.trim();
-    if (!apiKey) {
-      throw new Error('GEMINI_API_KEY is missing. Add it to server/.env');
-    }
+    if (!apiKey) throw new Error('GEMINI_API_KEY is missing. Add it to server/.env');
     this.genAI = new GoogleGenerativeAI(apiKey);
-    this.modelName = (process.env.GEMINI_MODEL || 'gemini-3-flash-preview').trim();
   }
 
   async *streamChat(messages: ChatMessage[]): AsyncIterable<string> {
@@ -217,9 +240,7 @@ class GeminiProvider implements AIProvider {
       .trim();
 
     const dialog = messages.filter(m => m.role !== 'system');
-    if (dialog.length === 0) {
-      return;
-    }
+    if (dialog.length === 0) return;
 
     const last = dialog[dialog.length - 1];
     if (last.role !== 'user') {
@@ -235,16 +256,13 @@ class GeminiProvider implements AIProvider {
 
     if (history.length > 0 && history[0].role !== 'user') {
       throw new Error(
-        'Gemini chat history must start with a user turn. Check stored messages for this conversation.'
+        'Gemini chat history must start with a user turn. Check stored messages for this conversation.',
       );
     }
 
     const model = this.genAI.getGenerativeModel({
       model: this.modelName,
       ...(systemText ? { systemInstruction: systemText } : {}),
-      // Gemini 2.5 Flash defaults to "thinking"; stream chunks can be thought-only so clients
-      // see no text until late. thinkingBudget 0 disables thinking for stable chat streaming.
-      // Set GEMINI_USE_THINKING=true to keep default model thinking instead.
       generationConfig: {
         maxOutputTokens: 8192,
         ...(String(this.modelName).includes('2.5') &&
@@ -278,7 +296,10 @@ class GeminiProvider implements AIProvider {
           const tail = extractGeminiFinalResponseText(final);
           if (tail) yield tail;
         } catch (e) {
-          console.error('[gemini] empty stream; aggregated response failed:', (e as Error)?.message || e);
+          console.error(
+            '[gemini] empty stream; aggregated response failed:',
+            (e as Error)?.message || e,
+          );
           throw e;
         }
       }
@@ -301,28 +322,47 @@ class GeminiProvider implements AIProvider {
   }
 }
 
-export function getAIProvider(): AIProvider {
-  const key = resolvedProviderKey();
-  if (providerInstance && cachedForProviderKey !== key) {
-    providerInstance = null;
-  }
-  if (providerInstance) {
-    return providerInstance;
-  }
+// ---------------------------------------------------------------------------
+// Provider factory with instance cache
+// ---------------------------------------------------------------------------
 
-  const provider = getActiveProviderName();
-  switch (provider) {
+const providerCache = new Map<string, AIProvider>();
+
+export function createAIProvider(providerId: string, model?: string): AIProvider {
+  const cat = PROVIDER_CATALOG[providerId];
+  if (!cat) throw new Error(`Unknown AI provider: ${providerId}`);
+
+  const apiKey = process.env[cat.envKey]?.trim();
+  if (!apiKey) throw new Error(`${cat.envKey} is not set. Cannot use ${cat.name}.`);
+
+  const resolvedModel = model || process.env[cat.envModelKey]?.trim() || cat.defaultModel;
+  const cacheKey = `${providerId}:${resolvedModel}`;
+
+  const cached = providerCache.get(cacheKey);
+  if (cached) return cached;
+
+  let provider: AIProvider;
+  switch (providerId) {
+    case 'openai':
+      provider = new OpenAIProvider(resolvedModel);
+      break;
     case 'anthropic':
-      providerInstance = new AnthropicProvider();
+      provider = new AnthropicProvider(resolvedModel);
       break;
     case 'gemini':
-      providerInstance = new GeminiProvider();
+      provider = new GeminiProvider(resolvedModel);
       break;
-    case 'openai':
     default:
-      providerInstance = new OpenAIProvider();
-      break;
+      throw new Error(`Unknown AI provider: ${providerId}`);
   }
-  cachedForProviderKey = key;
-  return providerInstance;
+
+  providerCache.set(cacheKey, provider);
+  return provider;
+}
+
+/** Auto-select first available provider (backwards compat). */
+export function getAIProvider(): AIProvider {
+  const defaultProv = getDefaultProvider();
+  if (!defaultProv) throw new Error('No AI provider configured. Set at least one API key.');
+  return createAIProvider(defaultProv);
 }

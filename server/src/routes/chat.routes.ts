@@ -1,11 +1,24 @@
 import { Router, Response } from 'express';
 import prisma from '../config/db';
 import { authMiddleware, AuthRequest } from '../middleware/auth';
-import { getAIProvider, ChatMessage } from '../services/ai-provider';
+import {
+  createAIProvider,
+  getAvailableProviders,
+  ChatMessage,
+} from '../services/ai-provider';
 
 const router = Router();
 
 router.use(authMiddleware);
+
+router.get('/providers', (_req: AuthRequest, res: Response) => {
+  try {
+    res.json({ providers: getAvailableProviders() });
+  } catch (err) {
+    console.error('Get providers error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
 
 router.get('/conversations', async (req: AuthRequest, res: Response) => {
   try {
@@ -106,7 +119,7 @@ router.delete('/conversations/:id', async (req: AuthRequest, res: Response) => {
 
 router.post('/conversations/:id/send', async (req: AuthRequest, res: Response) => {
   try {
-    const { message } = req.body;
+    const { message, provider: requestedProvider, model: requestedModel } = req.body;
     const convId = req.params.id as string;
     if (!message) {
       res.status(400).json({ error: 'Message is required' });
@@ -153,9 +166,17 @@ router.post('/conversations/:id/send', async (req: AuthRequest, res: Response) =
       { role: 'user' as const, content: message },
     ];
 
+    // Resolve provider: use client selection, fall back to first available
+    const available = getAvailableProviders();
+    const providerId =
+      (requestedProvider && available.some(p => p.id === requestedProvider)
+        ? requestedProvider
+        : available[0]?.id) as string | undefined;
+
     let fullResponse = '';
     try {
-      const provider = getAIProvider();
+      if (!providerId) throw new Error('No AI provider is configured on the server.');
+      const provider = createAIProvider(providerId, requestedModel || undefined);
       for await (const chunk of provider.streamChat(history)) {
         fullResponse += chunk;
         res.write(`data: ${JSON.stringify({ content: chunk })}\n\n`);
@@ -177,7 +198,7 @@ router.post('/conversations/:id/send', async (req: AuthRequest, res: Response) =
       const errorMsg = blocked
         ? detail
         : quota
-          ? 'Gemini free-tier limit was hit (429). Wait a minute and try again, switch model in GEMINI_MODEL, or enable billing on Google AI Studio.'
+          ? 'Rate limit hit (429). Wait a minute and try again, or switch to a different model/provider.'
           : safeToEcho
             ? detail
             : 'Sorry, I encountered an error generating a response. Please check your AI provider configuration.';

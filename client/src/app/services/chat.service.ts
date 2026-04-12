@@ -18,6 +18,18 @@ export interface Conversation {
   messages?: Message[];
 }
 
+export interface ProviderModel {
+  id: string;
+  name: string;
+}
+
+export interface ProviderInfo {
+  id: string;
+  name: string;
+  models: ProviderModel[];
+  defaultModel: string;
+}
+
 @Injectable({ providedIn: 'root' })
 export class ChatService {
   readonly conversations = signal<Conversation[]>([]);
@@ -26,7 +38,26 @@ export class ChatService {
   readonly isStreaming = signal(false);
   readonly streamingContent = signal('');
 
+  readonly providers = signal<ProviderInfo[]>([]);
+  readonly selectedProvider = signal('');
+  readonly selectedModel = signal('');
+
   constructor(private http: HttpClient, private auth: AuthService) {}
+
+  async loadProviders(): Promise<void> {
+    try {
+      const res = await firstValueFrom(
+        this.http.get<{ providers: ProviderInfo[] }>('/api/chat/providers'),
+      );
+      this.providers.set(res.providers);
+      if (res.providers.length > 0 && !this.selectedProvider()) {
+        this.selectedProvider.set(res.providers[0].id);
+        this.selectedModel.set(res.providers[0].defaultModel);
+      }
+    } catch (err) {
+      console.error('Failed to load providers:', err);
+    }
+  }
 
   async loadConversations(): Promise<void> {
     const res = await firstValueFrom(
@@ -110,7 +141,11 @@ export class ChatService {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`,
         },
-        body: JSON.stringify({ message: content }),
+        body: JSON.stringify({
+          message: content,
+          provider: this.selectedProvider(),
+          model: this.selectedModel(),
+        }),
       });
 
       if (!response.ok) throw new Error('Stream request failed');
@@ -164,7 +199,6 @@ export class ChatService {
         processSseLine(lineBuffer.trim());
       }
 
-      // Update conversation title in sidebar
       if (this.conversations().find(c => c.id === conv!.id)?.title === 'New Chat') {
         const titleSnippet = content.length > 50 ? content.substring(0, 50) + '...' : content;
         this.conversations.update(convs =>

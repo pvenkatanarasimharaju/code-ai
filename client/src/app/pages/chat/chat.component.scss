@@ -100,11 +100,47 @@
   white-space: nowrap;
 }
 
+.messages-stack {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .messages-area {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
+}
+
+.jump-to-latest {
+  position: absolute;
+  right: max(16px, env(safe-area-inset-right, 0px));
+  bottom: max(16px, env(safe-area-inset-bottom, 0px));
+  z-index: 15;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1px solid var(--border-color);
+  background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end));
+  color: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.06);
+  transition: transform 0.15s, box-shadow 0.15s, opacity 0.15s;
+
+  &:hover {
+    transform: translateY(2px);
+    box-shadow: 0 6px 24px var(--accent-glow);
+  }
+
+  &:active {
+    transform: translateY(0);
+  }
 }
 
 .empty-state {

@@ -5,12 +5,137 @@
 .input-wrapper {
   border-top: 1px solid var(--border-color);
   background: var(--bg-primary);
-  padding: 16px 20px 12px;
+  padding: 12px 20px 12px;
 }
 
 .input-inner {
   max-width: 768px;
   margin: 0 auto;
+}
+
+.selector-row {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 10px;
+  align-items: flex-end;
+}
+
+.selector-group {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.model-group {
+  flex: 1;
+  min-width: 0;
+}
+
+.selector-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  padding-left: 2px;
+}
+
+/* Custom select: panel opens upward (above trigger) so options stay visible above the input bar */
+.custom-select {
+  position: relative;
+  z-index: 1;
+}
+
+.custom-select:has(.selector-panel) {
+  z-index: 60;
+}
+
+.selector-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  font-family: inherit;
+  padding: 7px 12px;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.2s, color 0.2s;
+
+  &:hover {
+    border-color: var(--border-focus);
+    color: var(--text-primary);
+  }
+
+  &:focus-visible {
+    border-color: var(--border-focus);
+    box-shadow: 0 0 0 2px var(--accent-glow);
+  }
+}
+
+.selector-value {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selector-chevron {
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+.selector-panel {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 6px);
+  max-height: min(280px, 45vh);
+  overflow-y: auto;
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
+  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.45);
+  padding: 4px;
+}
+
+.selector-option {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 9px 12px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+
+  &:hover,
+  &:focus-visible {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+    outline: none;
+  }
+
+  &.active {
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+}
+
+.model-trigger {
+  min-width: 0;
 }
 
 .input-box {
@@ -79,4 +204,11 @@
   text-align: center;
   margin-top: 10px;
   opacity: 0.5;
+}
+
+@media (max-width: 480px) {
+  .selector-row {
+    flex-direction: column;
+    gap: 6px;
+  }
 }
