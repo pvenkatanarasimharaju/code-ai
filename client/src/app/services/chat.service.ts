@@ -44,6 +44,18 @@ export class ChatService {
 
   constructor(private http: HttpClient, private auth: AuthService) {}
 
+  /** Clear all in-memory chat state (call on logout / before loading data for a new account). */
+  resetSession(): void {
+    this.conversations.set([]);
+    this.activeConversation.set(null);
+    this.messages.set([]);
+    this.isStreaming.set(false);
+    this.streamingContent.set('');
+    this.providers.set([]);
+    this.selectedProvider.set('');
+    this.selectedModel.set('');
+  }
+
   async loadProviders(): Promise<void> {
     try {
       const res = await firstValueFrom(

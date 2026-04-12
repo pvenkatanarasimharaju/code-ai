@@ -44,6 +44,7 @@ export class ChatComponent implements OnInit, AfterViewInit, AfterViewChecked, O
   }
 
   async ngOnInit(): Promise<void> {
+    this.chat.resetSession();
     await Promise.all([
       this.chat.loadConversations(),
       this.chat.loadProviders(),

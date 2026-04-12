@@ -1,7 +1,8 @@
-import { Injectable, signal, computed } from '@angular/core';
+import { Injectable, signal, computed, Injector } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
+import { ChatService } from './chat.service';
 
 export interface User {
   id: string;
@@ -17,8 +18,20 @@ export class AuthService {
   readonly user = this.userSignal.asReadonly();
   readonly isAuthenticated = computed(() => !!this.userSignal());
 
-  constructor(private http: HttpClient, private router: Router) {
+  constructor(
+    private http: HttpClient,
+    private router: Router,
+    private injector: Injector,
+  ) {
     this.loadUser();
+  }
+
+  private clearChatSession(): void {
+    try {
+      this.injector.get(ChatService).resetSession();
+    } catch {
+      /* ChatService not available yet */
+    }
   }
 
   private async loadUser(): Promise<void> {
@@ -33,6 +46,7 @@ export class AuthService {
   }
 
   async register(email: string, password: string, name: string): Promise<void> {
+    this.clearChatSession();
     const res = await firstValueFrom(
       this.http.post<{ user: User; token: string }>('/api/auth/register', { email, password, name })
     );
@@ -42,6 +56,7 @@ export class AuthService {
   }
 
   async login(email: string, password: string): Promise<void> {
+    this.clearChatSession();
     const res = await firstValueFrom(
       this.http.post<{ user: User; token: string }>('/api/auth/login', { email, password })
     );
@@ -51,6 +66,7 @@ export class AuthService {
   }
 
   logout(): void {
+    this.clearChatSession();
     localStorage.removeItem('token');
     this.userSignal.set(null);
     this.router.navigate(['/login']);
