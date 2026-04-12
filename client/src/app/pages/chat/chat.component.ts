@@ -185,49 +185,9 @@ import { ChatInputComponent } from '../../components/chat-input/chat-input.compo
     }
     .prompt-card:hover .prompt-text { color: var(--text-primary); }
 
-    /* Streaming indicator */
-    .streaming-row {
-      padding: 16px 20px;
-    }
-    .streaming-inner {
-      max-width: 768px;
-      margin: 0 auto;
-      display: flex;
-      gap: 16px;
-      align-items: flex-start;
-    }
-    .streaming-avatar {
-      width: 34px;
-      height: 34px;
-      border-radius: 10px;
-      background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end));
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex-shrink: 0;
-    }
-    .bounce-dots {
-      display: flex;
-      gap: 6px;
-      padding-top: 10px;
-    }
-    .bounce-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: var(--accent);
-      animation: bounce 1.2s ease-in-out infinite;
-    }
-    .bounce-dot:nth-child(2) { animation-delay: 0.15s; }
-    .bounce-dot:nth-child(3) { animation-delay: 0.3s; }
-
     @keyframes fadeInUp {
       from { opacity: 0; transform: translateY(16px); }
       to   { opacity: 1; transform: translateY(0); }
-    }
-    @keyframes bounce {
-      0%, 60%, 100% { transform: translateY(0); }
-      30% { transform: translateY(-8px); }
     }
 
     @media (max-width: 768px) {
@@ -295,22 +255,11 @@ import { ChatInputComponent } from '../../components/chat-input/chat-input.compo
               </div>
             </div>
           } @else {
-            @for (msg of chat.messages(); track msg.id) {
-              <app-chat-message [message]="msg" />
-            }
-            @if (chat.isStreaming()) {
-              <div class="streaming-row">
-                <div class="streaming-inner">
-                  <div class="streaming-avatar">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-                  </div>
-                  <div class="bounce-dots">
-                    <div class="bounce-dot"></div>
-                    <div class="bounce-dot"></div>
-                    <div class="bounce-dot"></div>
-                  </div>
-                </div>
-              </div>
+            @for (msg of chat.messages(); track msg.id; let last = $last) {
+              <app-chat-message
+                [message]="msg"
+                [streaming]="chat.isStreaming() && last && msg.role === 'assistant'"
+              />
             }
           }
         </div>

@@ -118,35 +118,50 @@ export class ChatService {
       const reader = response.body!.getReader();
       const decoder = new TextDecoder();
       let fullContent = '';
+      let lineBuffer = '';
+
+      const applyChunk = (chunk: string): void => {
+        fullContent += chunk;
+        this.streamingContent.set(fullContent);
+        this.messages.update(msgs => {
+          const updated = [...msgs];
+          const last = updated[updated.length - 1];
+          if (last?.role === 'assistant') {
+            updated[updated.length - 1] = { ...last, content: fullContent };
+          }
+          return updated;
+        });
+      };
+
+      const processSseLine = (rawLine: string): void => {
+        const line = rawLine.replace(/\r$/, '');
+        if (!line.startsWith('data: ')) return;
+        const data = line.slice(6).trim();
+        if (data === '[DONE]') return;
+        try {
+          const parsed = JSON.parse(data) as { content?: string };
+          if (parsed.content) applyChunk(parsed.content);
+        } catch {
+          /* incomplete JSON — wait for more bytes in lineBuffer */
+        }
+      };
 
       while (true) {
         const { done, value } = await reader.read();
-        if (done) break;
+        lineBuffer += decoder.decode(value ?? new Uint8Array(0), { stream: !done });
 
-        const text = decoder.decode(value, { stream: true });
-        const lines = text.split('\n');
-
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const data = line.slice(6).trim();
-            if (data === '[DONE]') break;
-            try {
-              const parsed = JSON.parse(data);
-              if (parsed.content) {
-                fullContent += parsed.content;
-                this.streamingContent.set(fullContent);
-                this.messages.update(msgs => {
-                  const updated = [...msgs];
-                  updated[updated.length - 1] = {
-                    ...updated[updated.length - 1],
-                    content: fullContent,
-                  };
-                  return updated;
-                });
-              }
-            } catch {}
-          }
+        let nl: number;
+        while ((nl = lineBuffer.indexOf('\n')) >= 0) {
+          const line = lineBuffer.slice(0, nl);
+          lineBuffer = lineBuffer.slice(nl + 1);
+          processSseLine(line);
         }
+
+        if (done) break;
+      }
+
+      if (lineBuffer.trim()) {
+        processSseLine(lineBuffer.trim());
       }
 
       // Update conversation title in sidebar

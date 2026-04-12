@@ -254,27 +254,49 @@ class GeminiProvider implements AIProvider {
       } as Record<string, unknown>,
     });
 
-    const chat = model.startChat({ history });
-    const result = await chat.sendMessageStream(last.content);
+    const contentsForFallback = dialog.map(m => ({
+      role: m.role === 'assistant' ? ('model' as const) : ('user' as const),
+      parts: [{ text: m.content }],
+    }));
 
     let yielded = false;
-    for await (const chunk of result.stream) {
-      const t = extractGeminiStreamChunkText(chunk);
-      if (t) {
-        yielded = true;
-        yield t;
-      }
-    }
+    try {
+      const chat = model.startChat({ history });
+      const result = await chat.sendMessageStream(last.content);
 
-    if (!yielded) {
-      try {
-        const final = await result.response;
-        const tail = extractGeminiFinalResponseText(final);
-        if (tail) yield tail;
-      } catch (e) {
-        console.error('[gemini] empty stream; aggregated response failed:', (e as Error)?.message || e);
-        throw e;
+      for await (const chunk of result.stream) {
+        const t = extractGeminiStreamChunkText(chunk);
+        if (t) {
+          yielded = true;
+          yield t;
+        }
       }
+
+      if (!yielded) {
+        try {
+          const final = await result.response;
+          const tail = extractGeminiFinalResponseText(final);
+          if (tail) yield tail;
+        } catch (e) {
+          console.error('[gemini] empty stream; aggregated response failed:', (e as Error)?.message || e);
+          throw e;
+        }
+      }
+    } catch (e) {
+      const msg = (e as Error)?.message || String(e);
+      const useNonStreamFallback =
+        !yielded &&
+        (/Failed to parse stream|parse stream|Error reading from the stream/i.test(msg) ||
+          /fetch failed|ECONNRESET|ETIMEDOUT/i.test(msg));
+      if (useNonStreamFallback) {
+        console.warn('[gemini] stream failed; retrying with generateContent:', msg);
+        const resp = await model.generateContent({ contents: contentsForFallback });
+        const r = await resp.response;
+        const text = extractGeminiStreamChunkText(r);
+        if (text) yield text;
+        return;
+      }
+      throw e;
     }
   }
 }

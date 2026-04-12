@@ -166,6 +166,9 @@ router.post('/conversations/:id/send', async (req: AuthRequest, res: Response) =
       console.error('AI provider error:', detail, err?.status != null ? `status=${err.status}` : '');
       const blocked =
         detail.startsWith('Request was blocked') || detail.startsWith('Generation stopped');
+      const quota =
+        /429|Too Many Requests|quota|rate.?limit|free_tier_requests/i.test(detail) &&
+        detail.length < 800;
       const safeToEcho =
         process.env.NODE_ENV !== 'production' &&
         detail.length > 0 &&
@@ -173,9 +176,11 @@ router.post('/conversations/:id/send', async (req: AuthRequest, res: Response) =
         !/sk-|AIza|secret|password/i.test(detail);
       const errorMsg = blocked
         ? detail
-        : safeToEcho
-          ? detail
-          : 'Sorry, I encountered an error generating a response. Please check your AI provider configuration.';
+        : quota
+          ? 'Gemini free-tier limit was hit (429). Wait a minute and try again, switch model in GEMINI_MODEL, or enable billing on Google AI Studio.'
+          : safeToEcho
+            ? detail
+            : 'Sorry, I encountered an error generating a response. Please check your AI provider configuration.';
       fullResponse = errorMsg;
       res.write(`data: ${JSON.stringify({ content: errorMsg })}\n\n`);
     }

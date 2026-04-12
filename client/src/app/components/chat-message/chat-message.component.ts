@@ -1,7 +1,14 @@
-import { Component, input, OnInit, OnChanges, signal } from '@angular/core';
+import { Component, input, OnInit, OnChanges, signal, computed } from '@angular/core';
 import { Message } from '../../services/chat.service';
 import { marked } from 'marked';
 import hljs from 'highlight.js';
+
+function isProviderErrorText(content: string): boolean {
+  return (
+    /GoogleGenerativeAI|Failed to parse stream|429|quota|rate.?limit/i.test(content) &&
+    content.length < 2000
+  );
+}
 
 @Component({
   selector: 'app-chat-message',
@@ -64,6 +71,30 @@ import hljs from 'highlight.js';
       font-size: 15px;
       line-height: 1.7;
     }
+    .ai-error {
+      color: #ff9b9b;
+      font-size: 14px;
+      line-height: 1.6;
+      white-space: pre-wrap;
+    }
+    .typing {
+      display: flex;
+      gap: 6px;
+      padding: 4px 0 8px;
+    }
+    .typing span {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--accent);
+      animation: bounce 1.1s ease-in-out infinite;
+    }
+    .typing span:nth-child(2) { animation-delay: 0.15s; }
+    .typing span:nth-child(3) { animation-delay: 0.3s; }
+    @keyframes bounce {
+      0%, 60%, 100% { transform: translateY(0); }
+      30% { transform: translateY(-6px); }
+    }
 
     @keyframes fadeIn {
       from { opacity: 0; transform: translateY(8px); }
@@ -87,6 +118,12 @@ import hljs from 'highlight.js';
           </div>
           @if (message().role === 'user') {
             <div class="user-text">{{ message().content }}</div>
+          } @else if (streaming() && !message().content.trim()) {
+            <div class="typing" aria-label="Generating">
+              <span></span><span></span><span></span>
+            </div>
+          } @else if (showErrorPlain()) {
+            <p class="ai-error">{{ message().content }}</p>
           } @else {
             <div class="ai-text markdown-body" [innerHTML]="renderedHtml()"></div>
           }
@@ -97,7 +134,13 @@ import hljs from 'highlight.js';
 })
 export class ChatMessageComponent implements OnInit, OnChanges {
   message = input.required<Message>();
+  /** True while the assistant reply is still streaming (only meaningful for the last bubble). */
+  streaming = input(false);
   renderedHtml = signal('');
+  showErrorPlain = computed(() => {
+    const c = this.message().content || '';
+    return this.message().role === 'assistant' && isProviderErrorText(c);
+  });
 
   ngOnInit(): void {
     this.renderMarkdown();
@@ -108,7 +151,7 @@ export class ChatMessageComponent implements OnInit, OnChanges {
   }
 
   private renderMarkdown(): void {
-    if (this.message().role === 'assistant') {
+    if (this.message().role === 'assistant' && !isProviderErrorText(this.message().content)) {
       const renderer = new marked.Renderer();
       renderer.code = ({ text, lang }: { text: string; lang?: string }) => {
         const language = lang && hljs.getLanguage(lang) ? lang : 'plaintext';
@@ -119,6 +162,8 @@ export class ChatMessageComponent implements OnInit, OnChanges {
       marked.setOptions({ renderer, breaks: true });
       const html = marked.parse(this.message().content || '') as string;
       this.renderedHtml.set(html);
+    } else {
+      this.renderedHtml.set('');
     }
   }
 }

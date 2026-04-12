@@ -111,7 +111,7 @@ Set `AI_PROVIDER` to one of: `openai`, `anthropic`, `gemini`
 |----------|-------------|--------|
 | OpenAI | `OPENAI_API_KEY` | gpt-3.5-turbo (default), gpt-4 |
 | Anthropic | `ANTHROPIC_API_KEY` | claude-3-haiku (default), claude-3-sonnet |
-| Google | `GEMINI_API_KEY` | `gemini-2.5-flash` (default; set `GEMINI_MODEL` if Google returns 404) |
+| Google | `GEMINI_API_KEY` | `gemini-3-flash-preview` (default; set `GEMINI_MODEL` if Google returns 404) |
 
 Override the model with `OPENAI_MODEL`, `ANTHROPIC_MODEL`, or `GEMINI_MODEL`.
 
