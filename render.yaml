@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: code-ai
+    runtime: node
+    plan: free
+    buildCommand: "cd client && npm install && npm run build && cd ../server && npm install && cp prisma/schema.production.prisma prisma/schema.prisma && npx prisma generate && npx prisma migrate deploy && npm run build"
+    startCommand: "cd server && node dist/index.js"
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: code-ai-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: AI_PROVIDER
+        value: openai
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+
+databases:
+  - name: code-ai-db
+    plan: free
