@@ -98,7 +98,8 @@ The app will be available at **http://localhost:4200**.
 
 1. Create a PostgreSQL database on Render
 2. Create a Web Service with:
-   - **Build Command**: `cd client && npm install && npm run build && cd ../server && npm install && npx prisma generate && npx prisma migrate deploy && npm run build`
+   - **Build Command**: `cd client && npm install --include=dev && npm run build && cd ../server && npm install --include=dev && cp prisma/schema.production.prisma prisma/schema.prisma && npx prisma generate && npx prisma migrate deploy && npm run build`  
+     (`--include=dev` is required on Render because `NODE_ENV=production` skips devDependencies, so Angular CLI and TypeScript are not installed otherwise.)
    - **Start Command**: `cd server && node dist/index.js`
 3. Set environment variables: `DATABASE_URL`, `JWT_SECRET`, `AI_PROVIDER`, `OPENAI_API_KEY`
 
