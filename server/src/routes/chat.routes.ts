@@ -161,8 +161,21 @@ router.post('/conversations/:id/send', async (req: AuthRequest, res: Response) =
         res.write(`data: ${JSON.stringify({ content: chunk })}\n\n`);
       }
     } catch (aiErr) {
-      console.error('AI provider error:', aiErr);
-      const errorMsg = 'Sorry, I encountered an error generating a response. Please check your AI provider configuration.';
+      const err = aiErr as { message?: string; status?: number; cause?: unknown };
+      const detail = err?.message || String(aiErr);
+      console.error('AI provider error:', detail, err?.status != null ? `status=${err.status}` : '');
+      const blocked =
+        detail.startsWith('Request was blocked') || detail.startsWith('Generation stopped');
+      const safeToEcho =
+        process.env.NODE_ENV !== 'production' &&
+        detail.length > 0 &&
+        detail.length < 500 &&
+        !/sk-|AIza|secret|password/i.test(detail);
+      const errorMsg = blocked
+        ? detail
+        : safeToEcho
+          ? detail
+          : 'Sorry, I encountered an error generating a response. Please check your AI provider configuration.';
       fullResponse = errorMsg;
       res.write(`data: ${JSON.stringify({ content: errorMsg })}\n\n`);
     }

@@ -127,9 +127,74 @@ class AnthropicProvider implements AIProvider {
 }
 
 /**
- * Gemini: use systemInstruction on the model (not as a fake "user" in history).
+ * Gemini: systemInstruction on the model (not as a fake "user" in history).
  * Default model is a current Flash id; gemini-pro is deprecated on the Generative Language API.
+ *
+ * Stream chunks from @google/generative-ai must not use chunk.text(): it throws on
+ * SAFETY / RECITATION / LANGUAGE finish reasons and on promptFeedback blocks, which
+ * breaks streaming intermittently in production even with a valid API key.
+ *
+ * Gemini 2.5 may emit thought-only parts first; skip parts with thought: true.
+ * Do not treat BLOCK_REASON_UNSPECIFIED as a block (some chunks carry it without blocking).
  */
+function extractGeminiStreamChunkText(chunk: unknown): string {
+  const r = chunk as {
+    candidates?: Array<{
+      finishReason?: string;
+      finishMessage?: string;
+      content?: { parts?: Array<{ text?: string; thought?: boolean }> } | null;
+    }>;
+    promptFeedback?: { blockReason?: string; blockReasonMessage?: string };
+  };
+
+  const br = r.promptFeedback?.blockReason;
+  const meaningfulBlock =
+    br &&
+    br !== 'BLOCK_REASON_UNSPECIFIED' &&
+    br !== 'HARM_BLOCK_THRESHOLD_UNSPECIFIED';
+
+  if ((!r.candidates || r.candidates.length === 0) && meaningfulBlock) {
+    const msg = r.promptFeedback?.blockReasonMessage || '';
+    console.warn('[gemini] prompt blocked:', br, msg);
+    throw new Error(`Request was blocked (${br}). Try rephrasing your message.`);
+  }
+
+  const c0 = r.candidates?.[0];
+  if (!c0) return '';
+
+  const parts = c0.content?.parts;
+  let out = '';
+  if (parts?.length) {
+    for (const p of parts) {
+      if (p.thought === true) continue;
+      if (typeof p.text === 'string' && p.text.length) out += p.text;
+    }
+  }
+
+  const fr = c0.finishReason;
+  const hardStop = new Set([
+    'SAFETY',
+    'RECITATION',
+    'LANGUAGE',
+    'BLOCKLIST',
+    'PROHIBITED_CONTENT',
+    'SPII',
+  ]);
+  if (fr && hardStop.has(fr)) {
+    if (out) return out;
+    const fm = c0.finishMessage || '';
+    console.warn('[gemini] blocked finish:', fr, fm);
+    throw new Error(`Generation stopped (${fr}). Try a different prompt.`);
+  }
+
+  return out;
+}
+
+/** Final aggregated response from sendMessageStream — same safe extraction. */
+function extractGeminiFinalResponseText(response: unknown): string {
+  return extractGeminiStreamChunkText(response);
+}
+
 class GeminiProvider implements AIProvider {
   private genAI: any;
   private modelName: string;
@@ -141,8 +206,7 @@ class GeminiProvider implements AIProvider {
       throw new Error('GEMINI_API_KEY is missing. Add it to server/.env');
     }
     this.genAI = new GoogleGenerativeAI(apiKey);
-    // Unversioned ids like gemini-1.5-flash often 404 on v1beta; use current stable id (see https://ai.google.dev/gemini-api/docs/models/gemini )
-    this.modelName = (process.env.GEMINI_MODEL || 'gemini-2.5-flash').trim();
+    this.modelName = (process.env.GEMINI_MODEL || 'gemini-3-flash-preview').trim();
   }
 
   async *streamChat(messages: ChatMessage[]): AsyncIterable<string> {
@@ -178,19 +242,37 @@ class GeminiProvider implements AIProvider {
     const model = this.genAI.getGenerativeModel({
       model: this.modelName,
       ...(systemText ? { systemInstruction: systemText } : {}),
+      // Gemini 2.5 Flash defaults to "thinking"; stream chunks can be thought-only so clients
+      // see no text until late. thinkingBudget 0 disables thinking for stable chat streaming.
+      // Set GEMINI_USE_THINKING=true to keep default model thinking instead.
+      generationConfig: {
+        maxOutputTokens: 8192,
+        ...(String(this.modelName).includes('2.5') &&
+        !/^true$/i.test(process.env.GEMINI_USE_THINKING || '')
+          ? { thinkingConfig: { thinkingBudget: 0 } }
+          : {}),
+      } as Record<string, unknown>,
     });
 
     const chat = model.startChat({ history });
     const result = await chat.sendMessageStream(last.content);
 
+    let yielded = false;
     for await (const chunk of result.stream) {
+      const t = extractGeminiStreamChunkText(chunk);
+      if (t) {
+        yielded = true;
+        yield t;
+      }
+    }
+
+    if (!yielded) {
       try {
-        const textFn = (chunk as { text?: () => string }).text;
-        const t = typeof textFn === 'function' ? textFn.call(chunk) : '';
-        if (t) yield t;
-      } catch (e: unknown) {
-        const err = e as { message?: string };
-        console.error('[gemini] chunk error:', err?.message || e);
+        const final = await result.response;
+        const tail = extractGeminiFinalResponseText(final);
+        if (tail) yield tail;
+      } catch (e) {
+        console.error('[gemini] empty stream; aggregated response failed:', (e as Error)?.message || e);
         throw e;
       }
     }

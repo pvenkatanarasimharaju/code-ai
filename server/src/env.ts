@@ -9,7 +9,10 @@ const envPath = path.resolve(__dirname, '..', '.env');
 const result = dotenv.config({ path: envPath });
 
 if (result.error) {
-  console.warn(`[env] Could not read ${envPath}: ${result.error.message}. Using process env only.`);
+  console.warn(
+    `[env] No file at ${envPath} (${result.error.message}). Using process environment only ` +
+      `(normal on Render: set secrets in the service Environment tab).`
+  );
 } else {
   console.log(`[env] Loaded ${envPath}`);
 }
