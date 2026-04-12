@@ -3,7 +3,7 @@ services:
     name: code-ai
     runtime: node
     plan: free
-    buildCommand: "cd client && npm install --include=dev && npm run build && cd ../server && npm install --include=dev && npx prisma generate && npx prisma migrate deploy && npm run build"
+    buildCommand: "cd client && npm install --include=dev && npm run build && cd ../server && npm install --include=dev && cp prisma/schema.production.prisma prisma/schema.prisma && npx prisma generate && npx prisma migrate deploy && npm run build"
     startCommand: "cd server && node dist/index.js"
     envVars:
       - key: NODE_ENV
@@ -21,6 +21,12 @@ services:
       - key: ANTHROPIC_API_KEY
         sync: false
       - key: GEMINI_API_KEY
+        sync: false
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: ADMIN_NAME
         sync: false
 
 databases:

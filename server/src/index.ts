@@ -4,7 +4,9 @@ import cors from 'cors';
 import path from 'path';
 import { authRoutes } from './routes/auth.routes';
 import { chatRoutes } from './routes/chat.routes';
+import { adminRoutes } from './routes/admin.routes';
 import { logAiEnvStatus } from './services/ai-provider';
+import { seedAdmin } from './services/admin-seed';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -21,6 +23,7 @@ app.get('/api/health', (_req, res) => {
 
 app.use('/api/auth', authRoutes);
 app.use('/api/chat', chatRoutes);
+app.use('/api/admin', adminRoutes);
 
 if (process.env.NODE_ENV === 'production') {
   const clientPath = path.join(__dirname, '../../client/dist/client/browser');
@@ -30,9 +33,10 @@ if (process.env.NODE_ENV === 'production') {
   });
 }
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`Server running on port ${PORT}`);
   logAiEnvStatus();
+  await seedAdmin();
 });
 
 export default app;

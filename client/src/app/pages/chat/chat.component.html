@@ -9,7 +9,7 @@
   </aside>
   <!-- Mobile sidebar -->
   <aside class="sidebar-wrapper" [class]="sidebarOpen() ? 'mobile-open' : 'mobile-closed'">
-    <app-sidebar />
+    <app-sidebar (navigated)="sidebarOpen.set(false)" />
   </aside>
 
   <main class="chat-main">
