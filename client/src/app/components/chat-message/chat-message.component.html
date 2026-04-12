@@ -1,0 +1,28 @@
+<div class="message-row" [class.assistant]="message().role === 'assistant'">
+  <div class="message-inner">
+    <div class="avatar" [class.user]="message().role === 'user'" [class.ai]="message().role === 'assistant'">
+      @if (message().role === 'user') {
+        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--text-secondary)"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      } @else {
+        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      }
+    </div>
+
+    <div class="content">
+      <div class="role-label" [class.user]="message().role === 'user'" [class.ai]="message().role === 'assistant'">
+        {{ message().role === 'user' ? 'You' : 'Code AI' }}
+      </div>
+      @if (message().role === 'user') {
+        <div class="user-text">{{ message().content }}</div>
+      } @else if (streaming() && !message().content.trim()) {
+        <div class="typing" aria-label="Generating">
+          <span></span><span></span><span></span>
+        </div>
+      } @else if (showErrorPlain()) {
+        <p class="ai-error">{{ message().content }}</p>
+      } @else {
+        <div class="ai-text markdown-body" [innerHTML]="renderedHtml()"></div>
+      }
+    </div>
+  </div>
+</div>

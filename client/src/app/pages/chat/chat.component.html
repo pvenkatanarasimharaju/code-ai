@@ -1,0 +1,68 @@
+<div class="chat-layout">
+  @if (sidebarOpen()) {
+    <div class="mobile-overlay" (click)="sidebarOpen.set(false)"></div>
+  }
+
+  <!-- Desktop sidebar -->
+  <aside class="sidebar-wrapper desktop">
+    <app-sidebar />
+  </aside>
+  <!-- Mobile sidebar -->
+  <aside class="sidebar-wrapper" [class]="sidebarOpen() ? 'mobile-open' : 'mobile-closed'">
+    <app-sidebar />
+  </aside>
+
+  <main class="chat-main">
+    <div class="topbar">
+      <button class="menu-btn" (click)="sidebarOpen.set(!sidebarOpen())">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
+      <div class="topbar-info">
+        <div class="status-dot"></div>
+        <h2 class="topbar-title">{{ chat.activeConversation()?.title || 'Code AI' }}</h2>
+      </div>
+    </div>
+
+    <div #scrollContainer class="messages-area">
+      @if (chat.messages().length === 0) {
+        <div class="empty-state">
+          <div class="empty-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          </div>
+          <h2 class="empty-title">How can I help you today?</h2>
+          <p class="empty-subtitle">Start a conversation by typing below. I can help with coding, writing, analysis, and more.</p>
+          <div class="prompt-grid">
+            <button class="prompt-card" (click)="onSend('Explain how async/await works in JavaScript')">
+              <p class="prompt-label explain">Explain</p>
+              <p class="prompt-text">How async/await works in JS</p>
+            </button>
+            <button class="prompt-card" (click)="onSend('Write a Python function to reverse a linked list')">
+              <p class="prompt-label code">Write code</p>
+              <p class="prompt-text">Reverse a linked list in Python</p>
+            </button>
+            <button class="prompt-card" (click)="onSend('What are the best practices for REST API design?')">
+              <p class="prompt-label best">Best practices</p>
+              <p class="prompt-text">REST API design patterns</p>
+            </button>
+            <button class="prompt-card" (click)="onSend('Debug this error: TypeError: Cannot read properties of undefined')">
+              <p class="prompt-label debug">Debug</p>
+              <p class="prompt-text">TypeError: Cannot read properties</p>
+            </button>
+          </div>
+        </div>
+      } @else {
+        @for (msg of chat.messages(); track msg.id; let last = $last) {
+          <app-chat-message
+            [message]="msg"
+            [streaming]="chat.isStreaming() && last && msg.role === 'assistant'"
+          />
+        }
+      }
+    </div>
+
+    <app-chat-input
+      [disabled]="chat.isStreaming()"
+      (sendMessage)="onSend($event)"
+    />
+  </main>
+</div>

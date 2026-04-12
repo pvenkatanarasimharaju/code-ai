@@ -1,0 +1,60 @@
+<div class="auth-page">
+  <div class="bg-orb-1"></div>
+  <div class="bg-orb-2"></div>
+
+  <div class="auth-wrapper">
+    <div class="logo-area">
+      <div class="logo-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      </div>
+      <h1 class="logo-title">Code AI</h1>
+      <p class="logo-subtitle">Sign in to your account</p>
+    </div>
+
+    <div class="auth-card">
+      @if (error()) {
+        <div class="error-banner">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+          <span>{{ error() }}</span>
+        </div>
+      }
+
+      <form (ngSubmit)="onSubmit()">
+        <div class="form-group">
+          <label class="form-label">Email</label>
+          <input
+            type="email"
+            [(ngModel)]="email"
+            name="email"
+            required
+            class="form-input"
+            placeholder="you&#64;example.com"
+          />
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Password</label>
+          <input
+            type="password"
+            [(ngModel)]="password"
+            name="password"
+            required
+            class="form-input"
+            placeholder="Enter your password"
+          />
+        </div>
+
+        <button type="submit" [disabled]="loading()" class="submit-btn">
+          {{ loading() ? 'Signing in...' : 'Sign In' }}
+        </button>
+      </form>
+
+      <div class="footer-divider">
+        <p class="footer-text">
+          Don't have an account?
+          <a routerLink="/register" class="footer-link">Create one</a>
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
