@@ -2,6 +2,8 @@
 
 A full-stack AI chatbot application built with **Express.js**, **Angular**, and a database layer that uses **SQLite locally** and **PostgreSQL in production** (Render). Supports multiple AI providers (OpenAI, Anthropic, Google Gemini) with streaming responses, chat history, user authentication, and an optional **admin** account for user management.
 
+Live Demo: https://code-ai-o2he.onrender.com
+
 ## Features
 
 - Real-time streaming responses (SSE)
