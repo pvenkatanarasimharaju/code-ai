@@ -33,7 +33,6 @@ const PROVIDER_CATALOG: Record<
     name: 'Google Gemini',
     envKey: 'GEMINI_API_KEY',
     envModelKey: 'GEMINI_MODEL',
-    // Stable ids per https://ai.google.dev/gemini-api/docs/models — gemini-1.5-* returns 404 on v1beta for many keys.
     defaultModel: 'gemini-3-flash-preview',
     models: [
       { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash' },
@@ -70,38 +69,134 @@ const PROVIDER_CATALOG: Record<
     envKey: 'OPENROUTER_API_KEY',
     envModelKey: 'OPENROUTER_MODEL',
     defaultModel: 'meta-llama/llama-3.3-70b-instruct:free',
+    // Only `:free` ids returned by OpenRouter /api/v1/models (max_price=0). Larger / specialty
+    // free endpoints often return 400 unless requests avoid a standalone `system` message.
     models: [
       { id: 'meta-llama/llama-3.3-70b-instruct:free', name: 'Llama 3.3 70B' },
       { id: 'nvidia/nemotron-3-super-120b-a12b:free', name: 'Nemotron 3 Super 120B' },
-      { id: 'qwen/qwen3-coder:free', name: 'Qwen 3 Coder 480B' },
       { id: 'qwen/qwen3-next-80b-a3b-instruct:free', name: 'Qwen 3 Next 80B' },
-      { id: 'nousresearch/hermes-3-llama-3.1-405b:free', name: 'Hermes 3 405B' },
       { id: 'google/gemma-4-31b-it:free', name: 'Gemma 4 31B' },
       { id: 'openai/gpt-oss-120b:free', name: 'GPT-OSS 120B' },
       { id: 'nvidia/nemotron-3-nano-30b-a3b:free', name: 'Nemotron 3 Nano 30B' },
       { id: 'z-ai/glm-4.5-air:free', name: 'GLM 4.5 Air' },
       { id: 'google/gemma-3-27b-it:free', name: 'Gemma 3 27B' },
+      { id: 'openai/gpt-oss-20b:free', name: 'GPT-OSS 20B' },
+      { id: 'nvidia/nemotron-nano-9b-v2:free', name: 'Nemotron Nano 9B' },
+      { id: 'google/gemma-4-26b-a4b-it:free', name: 'Gemma 4 26B' },
+      { id: 'meta-llama/llama-3.2-3b-instruct:free', name: 'Llama 3.2 3B' },
+      { id: 'google/gemma-3-12b-it:free', name: 'Gemma 3 12B' },
     ],
   },
 };
 
+// ---------------------------------------------------------------------------
+// Model cooldown tracker — temporarily hides models that return 429 / 400
+// ---------------------------------------------------------------------------
+
+const COOLDOWN_MS = 65_000; // 65 seconds (free tier resets every 60s)
+
+const modelCooldowns = new Map<string, number>();
+
+export function cooldownModel(modelId: string): void {
+  modelCooldowns.set(modelId, Date.now() + COOLDOWN_MS);
+  console.warn(`[cooldown] ${modelId} on cooldown for ${COOLDOWN_MS / 1000}s`);
+}
+
+export function isModelCoolingDown(modelId: string): boolean {
+  const until = modelCooldowns.get(modelId);
+  if (!until) return false;
+  if (Date.now() >= until) {
+    modelCooldowns.delete(modelId);
+    return false;
+  }
+  return true;
+}
+
+function filterCooldowns(models: ProviderModelInfo[]): ProviderModelInfo[] {
+  return models.filter(m => !isModelCoolingDown(m.id));
+}
+
 /**
  * Returns providers whose API key is present in env.
- * If a *_MODEL env var is set and not already in the built-in list, it is prepended.
+ * Models on cooldown are filtered out; provider is omitted if all its models are cooled down.
  */
 export function getAvailableProviders(): ProviderInfo[] {
   const result: ProviderInfo[] = [];
   for (const [id, cat] of Object.entries(PROVIDER_CATALOG)) {
     if (!process.env[cat.envKey]?.trim()) continue;
     const envModel = process.env[cat.envModelKey]?.trim();
-    const defaultModel = envModel || cat.defaultModel;
-    const models = [...cat.models];
-    if (envModel && !models.some(m => m.id === envModel)) {
-      models.unshift({ id: envModel, name: envModel });
+    const allModels = [...cat.models];
+    if (envModel && !allModels.some(m => m.id === envModel)) {
+      allModels.unshift({ id: envModel, name: envModel });
     }
+    const models = filterCooldowns(allModels);
+    if (models.length === 0) continue;
+    const defaultModel =
+      models.some(m => m.id === (envModel || cat.defaultModel))
+        ? (envModel || cat.defaultModel)
+        : models[0].id;
     result.push({ id, name: cat.name, models, defaultModel });
   }
   return result;
+}
+
+/** Pick next available model for a provider, excluding already-tried ones. */
+export function pickFallbackModel(providerId: string, triedModels: Set<string>): string | null {
+  const cat = PROVIDER_CATALOG[providerId];
+  if (!cat) return null;
+  for (const m of cat.models) {
+    if (!triedModels.has(m.id) && !isModelCoolingDown(m.id)) return m.id;
+  }
+  return null;
+}
+
+/** Another configured provider that still has at least one active (non-cooldown) model. */
+export function pickAlternateProvider(excludeProviderId: string): ProviderInfo | null {
+  for (const p of getAvailableProviders()) {
+    if (p.id !== excludeProviderId && p.models.length > 0) return p;
+  }
+  return null;
+}
+
+/** Same resolution as createAIProvider — id actually sent to the API. */
+export function resolveProviderModel(providerId: string, requested?: string): string {
+  const cat = PROVIDER_CATALOG[providerId];
+  if (!cat) return (requested || '').trim();
+  const t = requested?.trim();
+  if (t) return t;
+  const envModel = process.env[cat.envModelKey]?.trim();
+  return envModel || cat.defaultModel;
+}
+
+export function getModelDisplayName(providerId: string, modelId: string): string {
+  if (!modelId) return 'Model';
+  const cat = PROVIDER_CATALOG[providerId];
+  if (!cat) return modelId;
+  const m = cat.models.find(x => x.id === modelId);
+  return m?.name ?? modelId;
+}
+
+/** True if this model id is allowed for the given provider (catalog or optional env override). */
+export function isModelAllowedForProvider(providerId: string, modelId: string): boolean {
+  const cat = PROVIDER_CATALOG[providerId];
+  if (!cat || !modelId) return false;
+  const envModel = process.env[cat.envModelKey]?.trim();
+  if (envModel && modelId === envModel) return true;
+  return cat.models.some(m => m.id === modelId);
+}
+
+/**
+ * Returns the requested model only if it belongs to this provider; otherwise undefined
+ * so the caller uses the provider default (avoids e.g. Gemini + OpenRouter model id → 404).
+ */
+export function coerceModelForProvider(providerId: string, requested?: string): string | undefined {
+  const t = requested?.trim();
+  if (!t) return undefined;
+  if (isModelAllowedForProvider(providerId, t)) return t;
+  console.warn(
+    `[ai] Model "${t}" is not valid for provider "${providerId}"; using provider default.`,
+  );
+  return undefined;
 }
 
 export function getDefaultProvider(): string | null {
@@ -120,6 +215,15 @@ export function logAiEnvStatus(): void {
   }
   const names = providers.map(p => `${p.id}(${p.defaultModel})`).join(', ');
   console.log(`[ai] Available providers: ${names}`);
+}
+
+/** Returns true if the error status/message means the model should be cooled down and retried. */
+export function isRetryableError(err: unknown): boolean {
+  const e = err as { message?: string; status?: number };
+  const msg = e?.message || String(err);
+  const status = e?.status;
+  if (status === 429 || status === 400) return true;
+  return /429|Too Many Requests|rate.?limit|400|Provider returned error/i.test(msg);
 }
 
 // ---------------------------------------------------------------------------
@@ -257,10 +361,38 @@ class OpenRouterProvider implements AIProvider {
     });
   }
 
+  /**
+   * Many free routed models return 400 on a standalone `system` message. Merge the system
+   * prompt into the **first** user turn so behavior stays global without `role: system`.
+   */
+  private buildOpenRouterMessages(messages: ChatMessage[]): { role: 'user' | 'assistant'; content: string }[] {
+    const systemText = messages
+      .filter(m => m.role === 'system')
+      .map(m => m.content)
+      .join('\n\n')
+      .trim();
+    const dialog = messages.filter(m => m.role !== 'system');
+    const out = dialog.map(m => ({
+      role: m.role as 'user' | 'assistant',
+      content: m.content,
+    }));
+    if (!systemText) return out;
+
+    const firstUserIdx = out.findIndex(m => m.role === 'user');
+    if (firstUserIdx >= 0) {
+      const u = out[firstUserIdx];
+      out[firstUserIdx] = { role: 'user', content: `${systemText}\n\n---\n\n${u.content}` };
+      return out;
+    }
+    return [{ role: 'user', content: systemText }, ...out];
+  }
+
   async *streamChat(messages: ChatMessage[]): AsyncIterable<string> {
+    const apiMessages = this.buildOpenRouterMessages(messages);
     const stream = await this.client.chat.completions.create({
       model: this.model,
-      messages: messages.map(m => ({ role: m.role, content: m.content })),
+      messages: apiMessages,
+      max_tokens: 4096,
       stream: true,
     });
     for await (const chunk of stream) {

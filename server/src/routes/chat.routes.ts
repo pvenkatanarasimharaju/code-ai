@@ -5,6 +5,13 @@ import {
   createAIProvider,
   getAvailableProviders,
   ChatMessage,
+  cooldownModel,
+  pickFallbackModel,
+  isRetryableError,
+  resolveProviderModel,
+  getModelDisplayName,
+  coerceModelForProvider,
+  pickAlternateProvider,
 } from '../services/ai-provider';
 
 const router = Router();
@@ -168,18 +175,84 @@ router.post('/conversations/:id/send', async (req: AuthRequest, res: Response) =
 
     // Resolve provider: use client selection, fall back to first available
     const available = getAvailableProviders();
-    const providerId =
+    let streamingProviderId =
       (requestedProvider && available.some(p => p.id === requestedProvider)
         ? requestedProvider
         : available[0]?.id) as string | undefined;
 
     let fullResponse = '';
-    try {
-      if (!providerId) throw new Error('No AI provider is configured on the server.');
-      const provider = createAIProvider(providerId, requestedModel || undefined);
+    const triedModels = new Set<string>();
+    const currentModel =
+      streamingProviderId != null
+        ? coerceModelForProvider(streamingProviderId, requestedModel) ?? undefined
+        : undefined;
+
+    const tryStream = async (requested?: string): Promise<boolean> => {
+      if (!streamingProviderId) return false;
+      const pid = streamingProviderId;
+      const resolved = resolveProviderModel(pid, requested);
+      triedModels.add(resolved);
+      res.write(
+        `data: ${JSON.stringify({
+          model: resolved,
+          modelLabel: getModelDisplayName(pid, resolved),
+          provider: pid,
+        })}\n\n`,
+      );
+      const provider = createAIProvider(pid, requested?.trim() || undefined);
       for await (const chunk of provider.streamChat(history)) {
         fullResponse += chunk;
         res.write(`data: ${JSON.stringify({ content: chunk })}\n\n`);
+      }
+      return true;
+    };
+
+    try {
+      if (!streamingProviderId) throw new Error('No AI provider is configured on the server.');
+
+      let success = false;
+      try {
+        success = await tryStream(currentModel);
+      } catch (firstErr) {
+        if (isRetryableError(firstErr) && streamingProviderId === 'openrouter') {
+          const resolvedFirst = resolveProviderModel(streamingProviderId, currentModel);
+          console.warn(`[retry] ${resolvedFirst} failed (retryable), trying fallback…`);
+          cooldownModel(resolvedFirst);
+
+          let fallback = pickFallbackModel(streamingProviderId, triedModels);
+          while (fallback && !success) {
+            try {
+              console.log(`[retry] Trying fallback model: ${fallback}`);
+              res.write(
+                `data: ${JSON.stringify({ content: `\n\n*Switching to ${fallback}…*\n\n` })}\n\n`,
+              );
+              success = await tryStream(fallback);
+            } catch (retryErr) {
+              if (isRetryableError(retryErr)) {
+                console.warn(`[retry] ${fallback} also failed, cooling down`);
+                cooldownModel(fallback);
+                fallback = pickFallbackModel(streamingProviderId, triedModels);
+              } else {
+                throw retryErr;
+              }
+            }
+          }
+        }
+        if (!success && isRetryableError(firstErr)) {
+          const alt = pickAlternateProvider(streamingProviderId!);
+          if (alt) {
+            console.warn(`[retry] Switching provider to ${alt.id} (${alt.name})`);
+            streamingProviderId = alt.id;
+            triedModels.clear();
+            res.write(
+              `data: ${JSON.stringify({
+                content: `\n\n*Switching to ${alt.name}…*\n\n`,
+              })}\n\n`,
+            );
+            success = await tryStream(undefined);
+          }
+        }
+        if (!success) throw firstErr;
       }
     } catch (aiErr) {
       const err = aiErr as { message?: string; status?: number; cause?: unknown };
@@ -198,7 +271,7 @@ router.post('/conversations/:id/send', async (req: AuthRequest, res: Response) =
       const errorMsg = blocked
         ? detail
         : quota
-          ? 'Rate limit hit (429). Wait a minute and try again, or switch to a different model/provider.'
+          ? 'All free models are rate-limited right now. Please wait a minute and try again.'
           : safeToEcho
             ? detail
             : 'Sorry, I encountered an error generating a response. Please check your AI provider configuration.';

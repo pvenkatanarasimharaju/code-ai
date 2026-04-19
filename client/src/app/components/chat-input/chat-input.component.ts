@@ -89,6 +89,12 @@ export class ChatInputComponent {
     this.modelMenuOpen.set(false);
   }
 
+  /** Close custom selects when the user moves focus to the message field. */
+  closeMenus(): void {
+    this.providerMenuOpen.set(false);
+    this.modelMenuOpen.set(false);
+  }
+
   onProviderChange(providerId: string): void {
     this.chat.selectedProvider.set(providerId);
     const prov = this.chat.providers().find(p => p.id === providerId);

@@ -58,12 +58,13 @@
         </div>
       </div>
     }
-    <div class="input-box">
+    <div class="input-box" (mousedown)="closeMenus()">
       <textarea
         #textareaRef
         [(ngModel)]="text"
         (keydown)="onKeydown($event)"
         (input)="autoResize()"
+        (focus)="closeMenus()"
         [disabled]="disabled()"
         rows="1"
         placeholder="Message Code AI..."

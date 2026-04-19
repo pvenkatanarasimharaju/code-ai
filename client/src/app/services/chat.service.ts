@@ -62,9 +62,17 @@ export class ChatService {
         this.http.get<{ providers: ProviderInfo[] }>('/api/chat/providers'),
       );
       this.providers.set(res.providers);
-      if (res.providers.length > 0 && !this.selectedProvider()) {
-        this.selectedProvider.set(res.providers[0].id);
-        this.selectedModel.set(res.providers[0].defaultModel);
+      if (res.providers.length === 0) return;
+      const withModels = res.providers.filter(p => p.models.length > 0);
+      const fallbackProv = withModels[0] ?? res.providers[0];
+      let prov = res.providers.find(p => p.id === this.selectedProvider());
+      if (!prov || prov.models.length === 0) {
+        prov = fallbackProv;
+        this.selectedProvider.set(prov.id);
+      }
+      const mid = this.selectedModel();
+      if (!mid || !prov.models.some(m => m.id === mid)) {
+        this.selectedModel.set(prov.defaultModel);
       }
     } catch (err) {
       console.error('Failed to load providers:', err);
@@ -186,7 +194,17 @@ export class ChatService {
         const data = line.slice(6).trim();
         if (data === '[DONE]') return;
         try {
-          const parsed = JSON.parse(data) as { content?: string };
+          const parsed = JSON.parse(data) as {
+            content?: string;
+            model?: string;
+            modelLabel?: string;
+            provider?: string;
+          };
+          if (parsed.model) {
+            if (parsed.provider) this.selectedProvider.set(parsed.provider);
+            this.selectedModel.set(parsed.model);
+            void this.loadProviders();
+          }
           if (parsed.content) applyChunk(parsed.content);
         } catch {
           /* incomplete JSON — wait for more bytes in lineBuffer */
