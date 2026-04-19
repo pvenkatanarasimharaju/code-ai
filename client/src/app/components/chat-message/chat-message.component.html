@@ -21,7 +21,11 @@
       } @else if (showErrorPlain()) {
         <p class="ai-error">{{ message().content }}</p>
       } @else {
-        <div class="ai-text markdown-body" [innerHTML]="renderedHtml()"></div>
+        <div
+          class="ai-text markdown-body"
+          [innerHTML]="safeRenderedHtml()"
+          (click)="onMarkdownClick($event)"
+        ></div>
       }
     </div>
   </div>

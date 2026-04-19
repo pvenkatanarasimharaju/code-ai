@@ -66,6 +66,98 @@
   line-height: 1.7;
 }
 
+/* innerHTML markdown — pierce encapsulation so injected nodes get styles */
+:host ::ng-deep .markdown-body {
+  p {
+    margin: 0.65em 0;
+    &:first-child {
+      margin-top: 0;
+    }
+    &:last-child {
+      margin-bottom: 0;
+    }
+  }
+
+  .code-block-wrap {
+    margin: 1rem 0;
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+    overflow: hidden;
+    background: var(--bg-card);
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.2);
+  }
+
+  .code-block-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 14px;
+    background: linear-gradient(
+      90deg,
+      rgba(108, 99, 255, 0.18),
+      rgba(168, 85, 247, 0.1)
+    );
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .code-block-lang {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  }
+
+  .code-copy-btn {
+    flex-shrink: 0;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 5px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-primary);
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-family: inherit;
+    transition: color 0.15s, border-color 0.15s, background 0.15s;
+
+    &:hover {
+      color: var(--text-primary);
+      border-color: var(--border-focus);
+      background: var(--bg-hover);
+    }
+  }
+
+  .code-block-pre {
+    margin: 0;
+    padding: 14px 16px;
+    overflow: auto;
+    max-height: min(65vh, 520px);
+    background: rgba(13, 17, 23, 0.92);
+    border-radius: 0;
+
+    code.hljs {
+      display: block;
+      padding: 0;
+      background: transparent !important;
+      font-size: 13px;
+      line-height: 1.55;
+    }
+  }
+
+  pre:not(.code-block-pre) {
+    margin: 1rem 0;
+    padding: 14px 16px;
+    overflow: auto;
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+    background: rgba(13, 17, 23, 0.92);
+  }
+
+}
+
 .ai-error {
   color: #ff9b9b;
   font-size: 14px;

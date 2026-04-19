@@ -14,6 +14,18 @@ import {
   pickAlternateProvider,
 } from '../services/ai-provider';
 
+function logStreamFailure(
+  phase: string,
+  providerId: string,
+  modelId: string,
+  err: unknown,
+): void {
+  const e = err as { message?: string; status?: number };
+  const msg = e?.message ?? String(err);
+  const statusPart = e?.status != null ? ` status=${e.status}` : '';
+  console.error(`[ai-stream] ${phase} provider=${providerId} model=${modelId}${statusPart}: ${msg}`);
+}
+
 const router = Router();
 
 router.use(authMiddleware);
@@ -216,7 +228,8 @@ router.post('/conversations/:id/send', async (req: AuthRequest, res: Response) =
       } catch (firstErr) {
         if (isRetryableError(firstErr) && streamingProviderId === 'openrouter') {
           const resolvedFirst = resolveProviderModel(streamingProviderId, currentModel);
-          console.warn(`[retry] ${resolvedFirst} failed (retryable), trying fallback…`);
+          logStreamFailure('openrouter-initial-before-fallback', streamingProviderId, resolvedFirst, firstErr);
+          console.warn(`[retry] ${resolvedFirst} failed (retryable), trying other OpenRouter models…`);
           cooldownModel(resolvedFirst);
 
           let fallback = pickFallbackModel(streamingProviderId, triedModels);
@@ -229,19 +242,27 @@ router.post('/conversations/:id/send', async (req: AuthRequest, res: Response) =
               success = await tryStream(fallback);
             } catch (retryErr) {
               if (isRetryableError(retryErr)) {
-                console.warn(`[retry] ${fallback} also failed, cooling down`);
+                logStreamFailure('openrouter-fallback-failed', streamingProviderId, fallback, retryErr);
+                console.warn(`[retry] ${fallback} cooled down; picking next model if any`);
                 cooldownModel(fallback);
                 fallback = pickFallbackModel(streamingProviderId, triedModels);
               } else {
+                logStreamFailure('openrouter-fallback-non-retryable', streamingProviderId, fallback, retryErr);
                 throw retryErr;
               }
             }
           }
+        } else if (firstErr && isRetryableError(firstErr)) {
+          const mid = resolveProviderModel(streamingProviderId!, currentModel);
+          logStreamFailure('initial-before-provider-switch', streamingProviderId!, mid, firstErr);
         }
         if (!success && isRetryableError(firstErr)) {
           const alt = pickAlternateProvider(streamingProviderId!);
           if (alt) {
-            console.warn(`[retry] Switching provider to ${alt.id} (${alt.name})`);
+            const prevPid = streamingProviderId;
+            console.warn(
+              `[retry] Switching provider ${prevPid} -> ${alt.id} (${alt.name}) after stream errors`,
+            );
             streamingProviderId = alt.id;
             triedModels.clear();
             res.write(
@@ -249,7 +270,13 @@ router.post('/conversations/:id/send', async (req: AuthRequest, res: Response) =
                 content: `\n\n*Switching to ${alt.name}…*\n\n`,
               })}\n\n`,
             );
-            success = await tryStream(undefined);
+            try {
+              success = await tryStream(undefined);
+            } catch (altErr) {
+              const mid = resolveProviderModel(streamingProviderId, undefined);
+              logStreamFailure('after-provider-switch', streamingProviderId, mid, altErr);
+              throw altErr;
+            }
           }
         }
         if (!success) throw firstErr;
