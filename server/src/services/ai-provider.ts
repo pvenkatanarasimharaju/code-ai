@@ -34,7 +34,7 @@ const PROVIDER_CATALOG: Record<
     envKey: 'GEMINI_API_KEY',
     envModelKey: 'GEMINI_MODEL',
     // Stable ids per https://ai.google.dev/gemini-api/docs/models — gemini-1.5-* returns 404 on v1beta for many keys.
-    defaultModel: 'gemini-2.5-flash',
+    defaultModel: 'gemini-3-flash-preview',
     models: [
       { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash' },
       { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash-Lite' },
@@ -63,6 +63,24 @@ const PROVIDER_CATALOG: Record<
       { id: 'claude-3-haiku-20240307', name: 'Claude 3 Haiku' },
       { id: 'claude-3-sonnet-20240229', name: 'Claude 3 Sonnet' },
       { id: 'claude-3-opus-20240229', name: 'Claude 3 Opus' },
+    ],
+  },
+  openrouter: {
+    name: 'OpenRouter',
+    envKey: 'OPENROUTER_API_KEY',
+    envModelKey: 'OPENROUTER_MODEL',
+    defaultModel: 'meta-llama/llama-3.3-70b-instruct:free',
+    models: [
+      { id: 'meta-llama/llama-3.3-70b-instruct:free', name: 'Llama 3.3 70B' },
+      { id: 'nvidia/nemotron-3-super-120b-a12b:free', name: 'Nemotron 3 Super 120B' },
+      { id: 'qwen/qwen3-coder:free', name: 'Qwen 3 Coder 480B' },
+      { id: 'qwen/qwen3-next-80b-a3b-instruct:free', name: 'Qwen 3 Next 80B' },
+      { id: 'nousresearch/hermes-3-llama-3.1-405b:free', name: 'Hermes 3 405B' },
+      { id: 'google/gemma-4-31b-it:free', name: 'Gemma 4 31B' },
+      { id: 'openai/gpt-oss-120b:free', name: 'GPT-OSS 120B' },
+      { id: 'nvidia/nemotron-3-nano-30b-a3b:free', name: 'Nemotron 3 Nano 30B' },
+      { id: 'z-ai/glm-4.5-air:free', name: 'GLM 4.5 Air' },
+      { id: 'google/gemma-3-27b-it:free', name: 'Gemma 3 27B' },
     ],
   },
 };
@@ -96,7 +114,7 @@ export function logAiEnvStatus(): void {
   if (providers.length === 0) {
     console.warn(
       '[ai] No AI providers configured. Set at least one API key ' +
-        '(GEMINI_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY).',
+        '(GEMINI_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY, or OPENROUTER_API_KEY).',
     );
     return;
   }
@@ -218,6 +236,36 @@ class AnthropicProvider implements AIProvider {
       if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
         yield event.delta.text;
       }
+    }
+  }
+}
+
+class OpenRouterProvider implements AIProvider {
+  private client: any;
+
+  constructor(private model: string) {
+    const OpenAI = require('openai');
+    const apiKey = process.env.OPENROUTER_API_KEY?.trim();
+    if (!apiKey) throw new Error('OPENROUTER_API_KEY is missing. Add it to server/.env');
+    this.client = new OpenAI({
+      baseURL: 'https://openrouter.ai/api/v1',
+      apiKey,
+      defaultHeaders: {
+        'HTTP-Referer': 'http://localhost:4200',
+        'X-OpenRouter-Title': 'Code AI Chat',
+      },
+    });
+  }
+
+  async *streamChat(messages: ChatMessage[]): AsyncIterable<string> {
+    const stream = await this.client.chat.completions.create({
+      model: this.model,
+      messages: messages.map(m => ({ role: m.role, content: m.content })),
+      stream: true,
+    });
+    for await (const chunk of stream) {
+      const content = chunk.choices?.[0]?.delta?.content;
+      if (content) yield content;
     }
   }
 }
@@ -351,6 +399,9 @@ export function createAIProvider(providerId: string, model?: string): AIProvider
       break;
     case 'gemini':
       provider = new GeminiProvider(resolvedModel);
+      break;
+    case 'openrouter':
+      provider = new OpenRouterProvider(resolvedModel);
       break;
     default:
       throw new Error(`Unknown AI provider: ${providerId}`);
